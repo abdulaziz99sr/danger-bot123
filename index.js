@@ -1,8 +1,8 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require('discord.js');
 
 const token = process.env.TOKEN;
-const clientId = '';
-const guildId = '';
+const clientId = '1483511468308566036';
+const guildId = '1270863034830553108';
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
