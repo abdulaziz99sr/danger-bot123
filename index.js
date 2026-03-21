@@ -1,15 +1,21 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require('discord.js');
+const express = require('express');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
 
 const token = process.env.TOKEN;
 const clientId = '1483511468308566036';
 const guildId = '1270863034830553108';
 
+// Roles allowed to use /say
 const allowedRoles = [
   '129068757209533160',
   '1290687573257355367',
   '1425176316281360466'
 ];
 
+// Channels that allow posts only
 const ALLOWED_CHANNELS = [
   '1290687696536080505',
   '1290687690194292777',
@@ -31,6 +37,16 @@ const client = new Client({
   ]
 });
 
+// Simple web server for Railway
+app.get('/', (req, res) => {
+  res.send('Bot is running');
+});
+
+app.listen(PORT, () => {
+  console.log(`Web server running on port ${PORT}`);
+});
+
+// Slash commands
 const commands = [
   new SlashCommandBuilder()
     .setName('say')
@@ -100,6 +116,7 @@ client.on('messageCreate', async message => {
 
   const hasAttachment = message.attachments.size > 0;
 
+  // Delete text-only messages
   if (!hasAttachment) {
     try {
       await message.delete();
@@ -109,6 +126,7 @@ client.on('messageCreate', async message => {
     return;
   }
 
+  // Prevent sticky spam in same channel in a short time
   const now = Date.now();
   const lastRun = stickyCooldown.get(message.channel.id) || 0;
 
