@@ -8,14 +8,14 @@ const token = process.env.TOKEN;
 const clientId = '1483511468308566036';
 const guildId = '1270863034830553108';
 
-// Roles allowed to use /say
+// roles for /say
 const allowedRoles = [
   '129068757209533160',
   '1290687573257355367',
   '1425176316281360466'
 ];
 
-// Posts-only channels
+// channels (posts only)
 const ALLOWED_CHANNELS = [
   '1290687696536080505',
   '1290687690194292777',
@@ -29,7 +29,7 @@ const lastSticky = new Map();
 const processedMessages = new Set();
 const stickyCooldown = new Map();
 
-// Keep Railway service alive
+// 🌐 keep railway alive
 app.get('/', (req, res) => {
   res.send('Bot is running');
 });
@@ -46,22 +46,20 @@ const client = new Client({
   ]
 });
 
-// Slash commands
+// slash command
 const commands = [
   new SlashCommandBuilder()
     .setName('say')
     .setDescription('Send a message as the bot')
     .addStringOption(option =>
-      option
-        .setName('message')
-        .setDescription('The message to send')
+      option.setName('message')
+        .setDescription('Message to send')
         .setRequired(true)
     )
-].map(command => command.toJSON());
+].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(token);
 
-// Register commands
 (async () => {
   try {
     await rest.put(
@@ -69,8 +67,8 @@ const rest = new REST({ version: '10' }).setToken(token);
       { body: commands }
     );
     console.log('Commands registered');
-  } catch (error) {
-    console.error('Failed to register commands:', error);
+  } catch (err) {
+    console.error(err);
   }
 })();
 
@@ -78,7 +76,7 @@ client.once('clientReady', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-// /say command
+// /say
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName !== 'say') return;
@@ -94,22 +92,19 @@ client.on('interactionCreate', async interaction => {
     });
   }
 
-  const message = interaction.options.getString('message');
+  const msg = interaction.options.getString('message');
 
-  await interaction.reply({
-    content: 'Done',
-    ephemeral: true
-  });
-
-  await interaction.channel.send(message);
+  await interaction.reply({ content: 'Done', ephemeral: true });
+  await interaction.channel.send(msg);
 });
 
-// Posts only + sticky
+// 🔥 posts only + sticky
 client.on('messageCreate', async message => {
   if (!message.guild) return;
   if (message.author.bot) return;
   if (!ALLOWED_CHANNELS.includes(message.channel.id)) return;
 
+  // prevent double processing
   if (processedMessages.has(message.id)) return;
   processedMessages.add(message.id);
 
@@ -119,37 +114,51 @@ client.on('messageCreate', async message => {
 
   const hasAttachment = message.attachments.size > 0;
 
-  // Delete text-only messages
+  // ❌ delete text-only
   if (!hasAttachment) {
     try {
       await message.delete();
     } catch (err) {
-      console.error('Failed to delete text-only message:', err);
+      console.error(err);
     }
     return;
   }
 
-  // Prevent sticky duplicate spam
+  // prevent spam
   const now = Date.now();
   const lastRun = stickyCooldown.get(message.channel.id) || 0;
-
   if (now - lastRun < 1500) return;
+
   stickyCooldown.set(message.channel.id, now);
 
   try {
+    // delete remembered sticky
     const oldStickyId = lastSticky.get(message.channel.id);
-
     if (oldStickyId) {
       try {
         const oldSticky = await message.channel.messages.fetch(oldStickyId);
         await oldSticky.delete().catch(() => {});
-      } catch (_) {}
+      } catch {}
     }
 
+    // 🔥 search last 100 messages
+    const recentMessages = await message.channel.messages.fetch({ limit: 100 });
+
+    const oldStickies = recentMessages.filter(msg =>
+      msg.author.id === client.user.id &&
+      msg.content === STICKY_TEXT
+    );
+
+    for (const [, msg] of oldStickies) {
+      await msg.delete().catch(() => {});
+    }
+
+    // send new sticky
     const newSticky = await message.channel.send(STICKY_TEXT);
     lastSticky.set(message.channel.id, newSticky.id);
+
   } catch (err) {
-    console.error('Failed to refresh sticky message:', err);
+    console.error(err);
   }
 });
 
