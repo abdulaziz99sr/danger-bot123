@@ -6,7 +6,7 @@ const PORT = process.env.PORT || 3000;
 
 const token = process.env.TOKEN;
 const clientId = '1483511468308566036';
-const guildId = '1270863034830553108';
+const guildId = '1270863034830553108
 
 // Roles allowed to use /say
 const allowedRoles = [
@@ -15,7 +15,7 @@ const allowedRoles = [
   '1425176316281360466'
 ];
 
-// Channels that allow posts only
+// Posts-only channels
 const ALLOWED_CHANNELS = [
   '1290687696536080505',
   '1290687690194292777',
@@ -29,21 +29,21 @@ const lastSticky = new Map();
 const processedMessages = new Set();
 const stickyCooldown = new Map();
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
-});
-
-// Simple web server for Railway
+// Keep Railway service alive
 app.get('/', (req, res) => {
   res.send('Bot is running');
 });
 
 app.listen(PORT, () => {
   console.log(`Web server running on port ${PORT}`);
+});
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
 
 // Slash commands
@@ -61,6 +61,7 @@ const commands = [
 
 const rest = new REST({ version: '10' }).setToken(token);
 
+// Register commands
 (async () => {
   try {
     await rest.put(
@@ -77,6 +78,7 @@ client.once('clientReady', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
+// /say command
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName !== 'say') return;
@@ -102,6 +104,7 @@ client.on('interactionCreate', async interaction => {
   await interaction.channel.send(message);
 });
 
+// Posts only + sticky
 client.on('messageCreate', async message => {
   if (!message.guild) return;
   if (message.author.bot) return;
@@ -126,7 +129,7 @@ client.on('messageCreate', async message => {
     return;
   }
 
-  // Prevent sticky spam in same channel in a short time
+  // Prevent sticky duplicate spam
   const now = Date.now();
   const lastRun = stickyCooldown.get(message.channel.id) || 0;
 
@@ -140,7 +143,7 @@ client.on('messageCreate', async message => {
       try {
         const oldSticky = await message.channel.messages.fetch(oldStickyId);
         await oldSticky.delete().catch(() => {});
-      } catch (err) {}
+      } catch (_) {}
     }
 
     const newSticky = await message.channel.send(STICKY_TEXT);
