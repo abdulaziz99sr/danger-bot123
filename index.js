@@ -1,22 +1,20 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require('discord.js');
 
-const token = 'PUT_YOUR_TOKEN_HERE';
-const clientId = 'PUT_YOUR_CLIENT_ID_HERE';
-const guildId = 'PUT_YOUR_GUILD_ID_HERE';
+const token = process.env.TOKEN;
+const clientId = '1483511468308566036';
+const guildId = '1270863034830553108';
 
-// Roles allowed to use /say
 const allowedRoles = [
   '129068757209533160',
   '1290687573257355367',
   '1425176316281360466'
 ];
 
-// Channels that allow posts only
 const ALLOWED_CHANNELS = [
-  'CHANNEL_ID_1',
-  'CHANNEL_ID_2',
-  'CHANNEL_ID_3',
-  'CHANNEL_ID_4'
+  '1290687696536080505',
+  '1290687690194292777',
+  '1400536942600257798',
+  '1290687693944000523'
 ];
 
 const STICKY_TEXT = 'Posts Only | بوستات فقط';
@@ -93,7 +91,6 @@ client.on('messageCreate', async message => {
   if (message.author.bot) return;
   if (!ALLOWED_CHANNELS.includes(message.channel.id)) return;
 
-  // prevent same message being processed twice
   if (processedMessages.has(message.id)) return;
   processedMessages.add(message.id);
 
@@ -103,7 +100,6 @@ client.on('messageCreate', async message => {
 
   const hasAttachment = message.attachments.size > 0;
 
-  // delete text-only messages
   if (!hasAttachment) {
     try {
       await message.delete();
@@ -113,7 +109,6 @@ client.on('messageCreate', async message => {
     return;
   }
 
-  // prevent sticky spam in same channel within a short time
   const now = Date.now();
   const lastRun = stickyCooldown.get(message.channel.id) || 0;
 
