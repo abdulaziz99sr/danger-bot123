@@ -6,7 +6,7 @@ const PORT = process.env.PORT || 3000;
 
 const token = process.env.TOKEN;
 const clientId = '1483511468308566036';
-const guildId = '1270863034830553108
+const guildId = '1270863034830553108';
 
 // Roles allowed to use /say
 const allowedRoles = [
