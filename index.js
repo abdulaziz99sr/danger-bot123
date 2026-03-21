@@ -11,7 +11,7 @@ const allowedRoles = [
   '1425176316281360466'
 ];
 
-// CHANNELS THAT REQUIRE IMAGES
+// CHANNELS THAT REQUIRE POSTS ONLY
 const ALLOWED_CHANNELS = [
   '1290687696536080505',
   '1290687690194292777',
@@ -22,7 +22,7 @@ const ALLOWED_CHANNELS = [
 // STICKY MESSAGE
 const STICKY_TEXT = 'Posts Only | بوستات فقط';
 
-// حفظ آخر sticky بكل روم
+// store last sticky message id per channel
 const lastSticky = {};
 
 const client = new Client({
@@ -39,7 +39,8 @@ const commands = [
     .setName('say')
     .setDescription('Send a message as the bot')
     .addStringOption(option =>
-      option.setName('message')
+      option
+        .setName('message')
         .setDescription('The message to send')
         .setRequired(true)
     )
@@ -58,10 +59,10 @@ const rest = new REST({ version: '10' }).setToken(token);
   } catch (error) {
     console.error(error);
   }
-});
+})();
 
 // READY
-client.on('ready', () => {
+client.on('clientReady', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
@@ -88,38 +89,41 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// IMAGE-ONLY + STICKY SYSTEM
+// POSTS ONLY + STICKY MESSAGE
 client.on('messageCreate', async message => {
-  if (message.author.bot || !message.guild) return;
-
+  if (!message.guild) return;
+  if (message.author.bot) return;
   if (!ALLOWED_CHANNELS.includes(message.channel.id)) return;
 
   const hasAttachment = message.attachments.size > 0;
 
-  // delete if no image
+  // text only -> delete
   if (!hasAttachment) {
     try {
       await message.delete();
-      return;
     } catch (err) {
-      console.error(err);
+      console.error('Failed to delete text-only message:', err);
     }
+    return;
   }
 
+  // allowed post -> refresh sticky
   try {
-    // delete previous sticky
     if (lastSticky[message.channel.id]) {
-      await message.channel.messages.delete(lastSticky[message.channel.id]).catch(() => {});
+      try {
+        const oldSticky = await message.channel.messages.fetch(lastSticky[message.channel.id]);
+        if (oldSticky) {
+          await oldSticky.delete();
+        }
+      } catch (err) {
+        // ignore if old sticky no longer exists
+      }
     }
 
-    // send new sticky
-    const stickyMsg = await message.channel.send(STICKY_TEXT);
-
-    // save sticky id
-    lastSticky[message.channel.id] = stickyMsg.id;
-
+    const newSticky = await message.channel.send(STICKY_TEXT);
+    lastSticky[message.channel.id] = newSticky.id;
   } catch (err) {
-    console.error(err);
+    console.error('Failed to refresh sticky message:', err);
   }
 });
 
