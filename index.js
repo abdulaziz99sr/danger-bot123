@@ -1,35 +1,29 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require('discord.js');
 
 const token = 'PUT_YOUR_TOKEN_HERE';
-const clientId = '1483511468308566036';
-const guildId = '1270863034830553108';
+const clientId = 'PUT_YOUR_CLIENT_ID_HERE';
+const guildId = 'PUT_YOUR_GUILD_ID_HERE';
 
-// ALLOWED ROLES FOR /say
+// Roles allowed to use /say
 const allowedRoles = [
   '129068757209533160',
   '1290687573257355367',
   '1425176316281360466'
 ];
 
-// CHANNELS THAT REQUIRE POSTS ONLY
+// Channels that allow posts only
 const ALLOWED_CHANNELS = [
-  '1290687696536080505',
-  '1290687690194292777',
-  '1400536942600257798',
-  '1400536942600257798'
+  'CHANNEL_ID_1',
+  'CHANNEL_ID_2',
+  'CHANNEL_ID_3',
+  'CHANNEL_ID_4'
 ];
 
-// STICKY MESSAGE
 const STICKY_TEXT = 'Posts Only | بوستات فقط';
 
-// STORE LAST STICKY PER CHANNEL
-const lastSticky = {};
-
-// LOCK PER CHANNEL TO PREVENT DOUBLE SEND
-const stickyLocks = {};
-
-// TRACK RECENTLY PROCESSED MESSAGES
-const recentMessages = new Set();
+const lastSticky = new Map();
+const processedMessages = new Set();
+const stickyCooldown = new Map();
 
 const client = new Client({
   intents: [
@@ -39,7 +33,6 @@ const client = new Client({
   ]
 });
 
-// COMMANDS
 const commands = [
   new SlashCommandBuilder()
     .setName('say')
@@ -54,7 +47,6 @@ const commands = [
 
 const rest = new REST({ version: '10' }).setToken(token);
 
-// REGISTER COMMANDS
 (async () => {
   try {
     await rest.put(
@@ -67,55 +59,51 @@ const rest = new REST({ version: '10' }).setToken(token);
   }
 })();
 
-// READY
-client.on('clientReady', () => {
+client.once('clientReady', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-// SLASH COMMANDS
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== 'say') return;
 
-  if (interaction.commandName === 'say') {
-    const hasRole = interaction.member.roles.cache.some(role =>
-      allowedRoles.includes(role.id)
-    );
+  const hasRole = interaction.member.roles.cache.some(role =>
+    allowedRoles.includes(role.id)
+  );
 
-    if (!hasRole) {
-      return interaction.reply({
-        content: 'You do not have permission',
-        ephemeral: true
-      });
-    }
-
-    const message = interaction.options.getString('message');
-
-    await interaction.reply({
-      content: 'Done',
+  if (!hasRole) {
+    return interaction.reply({
+      content: 'You do not have permission',
       ephemeral: true
     });
-
-    await interaction.channel.send(message);
   }
+
+  const message = interaction.options.getString('message');
+
+  await interaction.reply({
+    content: 'Done',
+    ephemeral: true
+  });
+
+  await interaction.channel.send(message);
 });
 
-// POSTS ONLY + STICKY MESSAGE
 client.on('messageCreate', async message => {
   if (!message.guild) return;
   if (message.author.bot) return;
   if (!ALLOWED_CHANNELS.includes(message.channel.id)) return;
 
-  // prevent same message from being processed more than once
-  if (recentMessages.has(message.id)) return;
-  recentMessages.add(message.id);
+  // prevent same message being processed twice
+  if (processedMessages.has(message.id)) return;
+  processedMessages.add(message.id);
 
   setTimeout(() => {
-    recentMessages.delete(message.id);
-  }, 5000);
+    processedMessages.delete(message.id);
+  }, 10000);
 
   const hasAttachment = message.attachments.size > 0;
 
-  // text only -> delete
+  // delete text-only messages
   if (!hasAttachment) {
     try {
       await message.delete();
@@ -125,30 +113,27 @@ client.on('messageCreate', async message => {
     return;
   }
 
-  // prevent duplicate sticky sends in same channel at same time
-  if (stickyLocks[message.channel.id]) return;
-  stickyLocks[message.channel.id] = true;
+  // prevent sticky spam in same channel within a short time
+  const now = Date.now();
+  const lastRun = stickyCooldown.get(message.channel.id) || 0;
+
+  if (now - lastRun < 1500) return;
+  stickyCooldown.set(message.channel.id, now);
 
   try {
-    // delete old sticky if it exists
-    if (lastSticky[message.channel.id]) {
+    const oldStickyId = lastSticky.get(message.channel.id);
+
+    if (oldStickyId) {
       try {
-        const oldSticky = await message.channel.messages.fetch(lastSticky[message.channel.id]);
-        if (oldSticky) {
-          await oldSticky.delete().catch(() => {});
-        }
-      } catch (err) {
-        // old sticky may already be deleted
-      }
+        const oldSticky = await message.channel.messages.fetch(oldStickyId);
+        await oldSticky.delete().catch(() => {});
+      } catch (err) {}
     }
 
-    // send new sticky
     const newSticky = await message.channel.send(STICKY_TEXT);
-    lastSticky[message.channel.id] = newSticky.id;
+    lastSticky.set(message.channel.id, newSticky.id);
   } catch (err) {
     console.error('Failed to refresh sticky message:', err);
-  } finally {
-    stickyLocks[message.channel.id] = false;
   }
 });
 
