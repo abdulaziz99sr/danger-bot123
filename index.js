@@ -23,7 +23,6 @@ const ALLOWED_CHANNELS = [
 ];
 
 const STICKY_TEXT = 'Posts Only | بوستات فقط';
-
 const SECURITY_LOG_CHANNEL_ID = '1290687685777821790';
 
 const SPAM_WINDOW_MS = 60 * 1000;
@@ -35,6 +34,14 @@ const processedMessages = new Set();
 const stickyCooldown = new Map();
 const spamTracker = new Map();
 const punishedUsers = new Set();
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function hasAllowedRole(member) {
+  return member.roles.cache.some(role => allowedRoles.includes(role.id));
+}
 
 app.get('/', (req, res) => {
   res.send('Bot is running');
@@ -57,6 +64,39 @@ const commands = [
   new SlashCommandBuilder()
     .setName('say')
     .setDescription('Send a message, image, or video as the bot')
+    .addStringOption(option =>
+      option.setName('message')
+        .setDescription('Message to send')
+        .setRequired(false)
+    )
+    .addAttachmentOption(option =>
+      option.setName('file')
+        .setDescription('Image or video to send')
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('dm-user')
+    .setDescription('Send a DM to a specific user')
+    .addUserOption(option =>
+      option.setName('user')
+        .setDescription('User to DM')
+        .setRequired(true)
+    )
+    .addStringOption(option =>
+      option.setName('message')
+        .setDescription('Message to send')
+        .setRequired(false)
+    )
+    .addAttachmentOption(option =>
+      option.setName('file')
+        .setDescription('Image or video to send')
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('dm-everyone')
+    .setDescription('Send a DM to all server members')
     .addStringOption(option =>
       option.setName('message')
         .setDescription('Message to send')
@@ -110,7 +150,6 @@ async function handleSpamProtection(message) {
   }
 
   let records = spamTracker.get(key);
-
   records = records.filter(record => now - record.time <= SPAM_WINDOW_MS);
 
   records.push({
@@ -181,35 +220,105 @@ Your account got hacked. It's sending random messages in the DANGER ZONE server.
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName !== 'say') return;
 
-  const hasRole = interaction.member.roles.cache.some(role =>
-    allowedRoles.includes(role.id)
-  );
-
-  if (!hasRole) {
+  if (!hasAllowedRole(interaction.member)) {
     return interaction.reply({
       content: 'You do not have permission',
       ephemeral: true
     });
   }
 
-  const msg = interaction.options.getString('message');
-  const file = interaction.options.getAttachment('file');
+  if (interaction.commandName === 'say') {
+    const msg = interaction.options.getString('message');
+    const file = interaction.options.getAttachment('file');
 
-  if (!msg && !file) {
-    return interaction.reply({
-      content: 'You must provide a message or a file.',
-      ephemeral: true
+    if (!msg && !file) {
+      return interaction.reply({
+        content: 'You must provide a message or a file.',
+        ephemeral: true
+      });
+    }
+
+    await interaction.reply({ content: 'Done', ephemeral: true });
+
+    return interaction.channel.send({
+      content: msg || undefined,
+      files: file ? [file.url] : []
     });
   }
 
-  await interaction.reply({ content: 'Done', ephemeral: true });
+  if (interaction.commandName === 'dm-user') {
+    const user = interaction.options.getUser('user');
+    const msg = interaction.options.getString('message');
+    const file = interaction.options.getAttachment('file');
 
-  await interaction.channel.send({
-    content: msg || undefined,
-    files: file ? [file.url] : []
-  });
+    if (!msg && !file) {
+      return interaction.reply({
+        content: 'You must provide a message or a file.',
+        ephemeral: true
+      });
+    }
+
+    try {
+      await user.send({
+        content: msg || undefined,
+        files: file ? [file.url] : []
+      });
+
+      return interaction.reply({
+        content: 'DM sent.',
+        ephemeral: true
+      });
+    } catch {
+      return interaction.reply({
+        content: 'Failed to send DM. The user may have DMs closed.',
+        ephemeral: true
+      });
+    }
+  }
+
+  if (interaction.commandName === 'dm-everyone') {
+    const msg = interaction.options.getString('message');
+    const file = interaction.options.getAttachment('file');
+
+    if (!msg && !file) {
+      return interaction.reply({
+        content: 'You must provide a message or a file.',
+        ephemeral: true
+      });
+    }
+
+    await interaction.reply({
+      content: 'Started sending DMs to all members.',
+      ephemeral: true
+    });
+
+    const members = await interaction.guild.members.fetch();
+
+    let sent = 0;
+    let failed = 0;
+
+    for (const [, member] of members) {
+      if (member.user.bot) continue;
+
+      try {
+        await member.send({
+          content: msg || undefined,
+          files: file ? [file.url] : []
+        });
+        sent++;
+      } catch {
+        failed++;
+      }
+
+      await sleep(1200);
+    }
+
+    return interaction.followUp({
+      content: `DM finished. Sent: ${sent}, Failed: ${failed}`,
+      ephemeral: true
+    });
+  }
 });
 
 client.on('messageCreate', async message => {
