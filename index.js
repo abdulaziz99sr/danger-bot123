@@ -1,6 +1,5 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require('discord.js');
 const express = require('express');
-const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,90 +35,12 @@ const stickyCooldown = new Map();
 const spamTracker = new Map();
 const punishedUsers = new Set();
 
-const CONTEST_FILE = './invite-contest-data.json';
-const inviteCache = new Map();
-
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function hasAllowedRole(member) {
   return member.roles.cache.some(role => allowedRoles.includes(role.id));
-}
-
-function createDefaultContestData() {
-  return {
-    active: false,
-    scoreboardChannelId: null,
-    scoreboardMessageId: null,
-    points: {},
-    countedUsers: {}
-  };
-}
-
-function loadContestData() {
-  if (!fs.existsSync(CONTEST_FILE)) return createDefaultContestData();
-
-  try {
-    return JSON.parse(fs.readFileSync(CONTEST_FILE, 'utf8'));
-  } catch {
-    return createDefaultContestData();
-  }
-}
-
-let contestData = loadContestData();
-
-function saveContestData() {
-  fs.writeFileSync(CONTEST_FILE, JSON.stringify(contestData, null, 2));
-}
-
-function formatScoreboard() {
-  const entries = Object.entries(contestData.points)
-    .sort((a, b) => b[1] - a[1]);
-
-  if (entries.length === 0) {
-    return 'نقاط المتسابقين📊:\n\nلا يوجد متسابقون حتى الآن.';
-  }
-
-  const lines = entries.map(([userId, points], index) => {
-    return `${index + 1}- <@${userId}> - ${points}`;
-  });
-
-  return `نقاط المتسابقين📊:\n\n${lines.join('\n\n')}`;
-}
-
-async function updateScoreboard() {
-  if (!contestData.scoreboardChannelId || !contestData.scoreboardMessageId) return;
-
-  const channel = await client.channels.fetch(contestData.scoreboardChannelId).catch(() => null);
-  if (!channel) return;
-
-  const message = await channel.messages.fetch(contestData.scoreboardMessageId).catch(() => null);
-  if (!message) return;
-
-  await message.edit({
-    content: formatScoreboard(),
-    allowedMentions: { parse: [] }
-  }).catch(() => {});
-}
-
-async function cacheGuildInvites(guild) {
-  const invites = await guild.invites.fetch().catch(() => null);
-  if (!invites) {
-    console.error('Failed to fetch invites. Make sure the bot has Manage Server permission.');
-    return;
-  }
-
-  const mappedInvites = new Map();
-
-  invites.forEach(invite => {
-    mappedInvites.set(invite.code, {
-      uses: invite.uses || 0,
-      inviterId: invite.inviter ? invite.inviter.id : null
-    });
-  });
-
-  inviteCache.set(guild.id, mappedInvites);
 }
 
 app.get('/', (req, res) => {
@@ -135,8 +56,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildInvites
+    GatewayIntentBits.GuildMembers
   ]
 });
 
@@ -186,23 +106,7 @@ const commands = [
       option.setName('file')
         .setDescription('Image or video to send')
         .setRequired(false)
-    ),
-
-  new SlashCommandBuilder()
-    .setName('points')
-    .setDescription('Create the invite competition points message'),
-
-  new SlashCommandBuilder()
-    .setName('startinvite')
-    .setDescription('Start invite points counting'),
-
-  new SlashCommandBuilder()
-    .setName('stopinvite')
-    .setDescription('Stop invite points counting'),
-
-  new SlashCommandBuilder()
-    .setName('resetinvite')
-    .setDescription('Reset invite competition points')
+    )
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(token);
@@ -219,64 +123,9 @@ const rest = new REST({ version: '10' }).setToken(token);
   }
 })();
 
-client.once('clientReady', async () => {
+client.once('clientReady', () => {
   console.log(`Logged in as ${client.user.tag}`);
-
-  for (const [, guild] of client.guilds.cache) {
-    await cacheGuildInvites(guild);
-  }
 });
-client.on('inviteCreate', async invite => {
-  await cacheGuildInvites(invite.guild);
-});
-
-client.on('inviteDelete', async invite => {
-  await cacheGuildInvites(invite.guild);
-});
-
-client.on('guildMemberAdd', async member => {
-  if (!contestData.active) {
-    await cacheGuildInvites(member.guild);
-    return;
-  }
-
-  if (contestData.countedUsers[member.id]) {
-    await cacheGuildInvites(member.guild);
-    return;
-  }
-
-  const oldInvites = inviteCache.get(member.guild.id) || new Map();
-  const newInvites = await member.guild.invites.fetch().catch(() => null);
-
-  if (!newInvites) return;
-
-  let usedInvite = null;
-
-  newInvites.forEach(invite => {
-    const oldInvite = oldInvites.get(invite.code);
-    const oldUses = oldInvite ? oldInvite.uses : 0;
-    const newUses = invite.uses || 0;
-
-    if (newUses > oldUses) {
-      usedInvite = invite;
-    }
-  });
-
-  await cacheGuildInvites(member.guild);
-
-  if (!usedInvite || !usedInvite.inviter) return;
-
-  const inviterId = usedInvite.inviter.id;
-
-  if (inviterId === member.id) return;
-
-  contestData.countedUsers[member.id] = inviterId;
-  contestData.points[inviterId] = (contestData.points[inviterId] || 0) + 1;
-
-  saveContestData();
-  await updateScoreboard();
-});
-
 
 function getMessageSignature(message) {
   const text = message.content.trim().toLowerCase();
@@ -467,56 +316,6 @@ client.on('interactionCreate', async interaction => {
 
     return interaction.followUp({
       content: `DM finished. Sent: ${sent}, Failed: ${failed}`,
-      ephemeral: true
-    });
-  }
-
-  if (interaction.commandName === 'points') {
-    const scoreboardMessage = await interaction.channel.send({
-      content: formatScoreboard(),
-      allowedMentions: { parse: [] }
-    });
-
-    contestData.scoreboardChannelId = interaction.channel.id;
-    contestData.scoreboardMessageId = scoreboardMessage.id;
-
-    saveContestData();
-
-    return interaction.reply({
-      content: 'Points message created.',
-      ephemeral: true
-    });
-  }
-
-  if (interaction.commandName === 'startinvite') {
-    contestData.active = true;
-    saveContestData();
-    await cacheGuildInvites(interaction.guild);
-
-    return interaction.reply({
-      content: 'Invite competition started.',
-      ephemeral: true
-    });
-  }
-
-  if (interaction.commandName === 'stopinvite') {
-    contestData.active = false;
-    saveContestData();
-
-    return interaction.reply({
-      content: 'Invite competition stopped.',
-      ephemeral: true
-    });
-  }
-
-  if (interaction.commandName === 'resetinvite') {
-    contestData.points = {};
-    contestData.countedUsers = {};
-    saveContestData();
-    await updateScoreboard();
-
-    return interaction.reply({
-      content: 'Invite competition reset.',
       ephemeral: true
     });
   }
