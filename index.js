@@ -53,7 +53,8 @@ function createDefaultContestData() {
     scoreboardChannelId: null,
     scoreboardMessageId: null,
     points: {},
-    countedUsers: {}
+    countedUsers: {},
+    usernames: {}
   };
 }
 
@@ -63,7 +64,9 @@ function loadContestData() {
   }
 
   try {
-    return JSON.parse(fs.readFileSync(CONTEST_FILE, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(CONTEST_FILE, 'utf8'));
+    if (!data.usernames) data.usernames = {};
+    return data;
   } catch {
     return createDefaultContestData();
   }
@@ -84,7 +87,8 @@ function formatScoreboard() {
   }
 
   const lines = entries.map(([userId, points], index) => {
-    return `${index + 1}- <@${userId}> - ${points}`;
+    const username = contestData.usernames[userId] || userId;
+    return `${index + 1}- ${username} - ${points}`;
   });
 
   return `نقاط المتسابقين📊:\n\n${lines.join('\n\n')}`;
@@ -94,7 +98,7 @@ async function updateScoreboard() {
   if (!contestData.scoreboardChannelId || !contestData.scoreboardMessageId) return;
 
   const channel = await client.channels.fetch(contestData.scoreboardChannelId).catch(() => null);
-  if (!channel) return;
+    if (!channel) return;
 
   const message = await channel.messages.fetch(contestData.scoreboardMessageId).catch(() => null);
   if (!message) return;
@@ -184,7 +188,6 @@ const commands = [
         .setDescription('Message to send')
         .setRequired(false)
     )
-
     .addAttachmentOption(option =>
       option.setName('file')
         .setDescription('Image or video to send')
@@ -194,8 +197,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName('points')
     .setDescription('Create the invite competition points message'),
-
-  new SlashCommandBuilder()
+      new SlashCommandBuilder()
     .setName('startinvite')
     .setDescription('Start invite points counting'),
 
@@ -231,6 +233,20 @@ client.once('clientReady', async () => {
   for (const [, guild] of client.guilds.cache) {
     await cacheGuildInvites(guild);
   }
+    for (const userId of Object.keys(contestData.points)) {
+    if (!contestData.usernames[userId]) {
+      try {
+        const member = await client.guilds.cache
+          .get(guildId)
+          .members.fetch(userId);
+
+        contestData.usernames[userId] = member.displayName;
+      } catch {}
+    }
+  }
+
+  saveContestData();
+  await updateScoreboard();
 });
 
 client.on('inviteCreate', async invite => {
@@ -279,6 +295,7 @@ client.on('guildMemberAdd', async member => {
 
   if (inviterId === member.id) return;
 
+  contestData.usernames[inviterId] = usedInvite.inviter.username;
   contestData.countedUsers[member.id] = inviterId;
   contestData.points[inviterId] = (contestData.points[inviterId] || 0) + 1;
 
@@ -293,8 +310,7 @@ client.on('guildMemberRemove', async member => {
 
   if (contestData.points[inviterId]) {
     contestData.points[inviterId]--;
-
-    if (contestData.points[inviterId] <= 0) {
+        if (contestData.points[inviterId] <= 0) {
       delete contestData.points[inviterId];
     }
   }
@@ -378,8 +394,7 @@ Attention!!
 <@${userId}> Account has been hacked. Please do not contact`
       ).catch(() => {});
     }
-
-    await message.author.send(
+        await message.author.send(
 `السلام عليكم..
 
 حسابك متهكر وقاعد يرسل رسائل عشوائية بسيرفر DANGER ZONE..
@@ -459,8 +474,7 @@ client.on('interactionCreate', async interaction => {
       });
     }
   }
-
-  if (interaction.commandName === 'dm-everyone') {
+    if (interaction.commandName === 'dm-everyone') {
     const msg = interaction.options.getString('message');
     const file = interaction.options.getAttachment('file');
 
@@ -506,7 +520,6 @@ client.on('interactionCreate', async interaction => {
   }
 
   if (interaction.commandName === 'points') {
-
     const scoreboardMessage = await interaction.channel.send({
       content: formatScoreboard(),
       allowedMentions: { parse: [] }
@@ -524,7 +537,6 @@ client.on('interactionCreate', async interaction => {
   }
 
   if (interaction.commandName === 'startinvite') {
-
     contestData.active = true;
     saveContestData();
 
@@ -537,7 +549,6 @@ client.on('interactionCreate', async interaction => {
   }
 
   if (interaction.commandName === 'stopinvite') {
-
     contestData.active = false;
     saveContestData();
 
@@ -548,7 +559,6 @@ client.on('interactionCreate', async interaction => {
   }
 
   if (interaction.commandName === 'resetinvite') {
-
     contestData.points = {};
     contestData.countedUsers = {};
 
@@ -560,11 +570,9 @@ client.on('interactionCreate', async interaction => {
       ephemeral: true
     });
   }
-
 });
 
 client.on('messageCreate', async message => {
-
   if (!message.guild) return;
   if (message.author.bot) return;
 
@@ -600,16 +608,13 @@ client.on('messageCreate', async message => {
   stickyCooldown.set(message.channel.id, now);
 
   try {
-
     const oldStickyId = lastSticky.get(message.channel.id);
 
     if (oldStickyId) {
-
       try {
         const oldSticky = await message.channel.messages.fetch(oldStickyId);
         await oldSticky.delete().catch(() => {});
       } catch {}
-
     }
 
     const recentMessages = await message.channel.messages.fetch({
@@ -632,7 +637,6 @@ client.on('messageCreate', async message => {
   } catch (err) {
     console.error(err);
   }
-
 });
 
 client.login(token);
